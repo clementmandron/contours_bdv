@@ -79,6 +79,8 @@ def main():
     ## Les données
     Les données sont issues de [la proposition de contours des bureaux de vote de data.gouv.fr](https://www.data.gouv.fr/fr/datasets/proposition-de-contours-des-bureaux-de-vote/). 
     Veuillez vous référer à la description du jeu de données pour prendre connaissance des précautions d’usage. Les données ont été téléchargées le 14/06/2024 et ont été transformées au format GeoParquet.
+                
+    [Cliquez-ici pour accèder au code source du projet.](https://contoursbdv-3vukdh6np9rqntr94d5yhh.streamlit.app/)
         
     """)
 
