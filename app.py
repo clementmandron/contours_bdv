@@ -77,7 +77,8 @@ def main():
     Téléchargez les contours géographiques des bureaux de vote en France au format GeoJSON pour un département, une circonscription ou une commune.
                 
     ## Les données
-    Les données sont issues de [la proposition de contours des bureaux de vote de data.gouv.fr](https://www.data.gouv.fr/fr/datasets/proposition-de-contours-des-bureaux-de-vote/). Veuillez-vous référer à la description du jeu de données pour prendre connaissance des précautions d’usage. Les données ont été téléchargées le 14/06/2024 et ont été transformées au format GeoParquet.
+    Les données sont issues de [la proposition de contours des bureaux de vote de data.gouv.fr](https://www.data.gouv.fr/fr/datasets/proposition-de-contours-des-bureaux-de-vote/). 
+    Veuillez vous référer à la description du jeu de données pour prendre connaissance des précautions d’usage. Les données ont été téléchargées le 14/06/2024 et ont été transformées au format GeoParquet.
         
     """)
 
