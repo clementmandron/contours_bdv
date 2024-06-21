@@ -5,7 +5,7 @@ from io import BytesIO
 # Load GeoParquet file 
 @st.cache_data
 def load_geoparquet_file(filepath):
-    gdf = gpd.read_parquet(filepath, storage_options={"use_listings_cache"=False})  # Load GeoParquet file
+    gdf = gpd.read_parquet(filepath, storage_options={"use_listings_cache"==False})  # Load GeoParquet file
     return gdf
 
 def download_button_for_gdf(get_gdf_callable, filename_prefix):
