@@ -1,11 +1,13 @@
 import streamlit as st
 import geopandas as gpd
 from io import BytesIO
+import io
+import requests
 
 # Load GeoParquet file 
 @st.cache_data
-def load_geoparquet_file(filepath):
-    gdf = gpd.read_parquet(filepath)  # Load GeoParquet file
+def load_geoparquet_file(_response):
+    gdf = gpd.read_parquet(io.BytesIO(_response.content))  # Load GeoParquet file
     return gdf
 
 def download_button_for_gdf(get_gdf_callable, filename_prefix):
@@ -28,9 +30,12 @@ def main():
                 """)
     
     # Path to the pre-existing GeoParquet file
-    filepath = "contours-france-entiere-latest-v2.parquet"
+    url = "https://static.data.gouv.fr/resources/proposition-de-contours-des-bureaux-de-vote/20240614-184650/contours-france-entiere-latest-v2.parquet"
     
-    gdf = load_geoparquet_file(filepath)
+    response = requests.get(url)
+    response.raise_for_status()  # This will raise an error if the download failed
+    
+    gdf = load_geoparquet_file(response)
 
     # Create formatted columns for department, circonscription, and commune
     gdf['nomCodeDepartement'] = gdf['codeDepartement'] + " - " + gdf['nomDepartement']
