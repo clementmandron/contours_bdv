@@ -63,15 +63,47 @@ def read_root():
         "name": "Contours Bureaux de Vote API",
         "endpoints": {
             "/search": "Search departments, circonscriptions, or communes",
-            "/download/{type}/{name}": "Download GeoJSON for a specific area"
+            "/download/{type}/{name}": "Download GeoJSON for a specific area",
+            "/api/info": "Get dataset information"
         }
     }
+
+
+@app.get("/api/info")
+def get_data_info():
+    """Get information about the dataset"""
+    # Extract date from filename (format: YYYYMMDD_contours_bureaux_vote.parquet)
+    import re
+    date_match = re.search(r'(\d{4})(\d{2})(\d{2})_', PARQUET_URL)
+
+    if date_match:
+        year, month, day = date_match.groups()
+        last_updated = f"{day}/{month}/{year}"
+    else:
+        last_updated = "Non disponible"
+
+    return {
+        "last_updated": last_updated,
+        "source": "data.gouv.fr",
+        "source_url": "https://www.data.gouv.fr/fr/datasets/proposition-de-contours-des-bureaux-de-vote/",
+        "method": "Diagrammes de Voronoi"
+    }
+
+
+def remove_accents(text: str) -> str:
+    """Remove accents from text for accent-insensitive search"""
+    import unicodedata
+    return ''.join(
+        c for c in unicodedata.normalize('NFD', text)
+        if unicodedata.category(c) != 'Mn'
+    )
 
 
 @app.get("/search")
 def search(q: str = "", type: str = "all"):
     """
     Search for departments, circonscriptions, or communes.
+    Search is accent-insensitive (e.g., 'fleville' will match 'Fléville').
 
     Args:
         q: Search query
@@ -84,48 +116,84 @@ def search(q: str = "", type: str = "all"):
         return results
 
     query_lower = q.lower()
+    query_normalized = remove_accents(query_lower)
 
     # Search departments
     if type in ["all", "departement"]:
-        dept_query = f"""
+        # Get all departments and filter in Python for accent-insensitive search
+        dept_query = """
             SELECT DISTINCT
                 codeDepartement as code,
                 nomDepartement as name
             FROM contours
-            WHERE LOWER(nomDepartement) LIKE '%{query_lower}%'
-               OR codeDepartement LIKE '%{query_lower}%'
             ORDER BY nomDepartement
-            LIMIT 10
         """
-        results["departements"] = conn.execute(dept_query).fetchdf().to_dict('records')
+        df = conn.execute(dept_query).fetchdf()
+
+        # Filter with accent-insensitive matching
+        filtered = df[
+            df['name'].apply(lambda x: query_normalized in remove_accents(x.lower())) |
+            df['code'].apply(lambda x: query_lower in x.lower())
+        ]
+        results["departements"] = filtered.head(10).to_dict('records')
 
     # Search circonscriptions
     if type in ["all", "circonscription"]:
-        circ_query = f"""
+        # Get all circonscriptions and filter in Python for accent-insensitive search
+        circ_query = """
             SELECT DISTINCT
                 nomCirconscription as name,
                 nomDepartement as departement
             FROM contours
-            WHERE LOWER(nomCirconscription) LIKE '%{query_lower}%'
             ORDER BY nomCirconscription
-            LIMIT 10
         """
-        results["circonscriptions"] = conn.execute(circ_query).fetchdf().to_dict('records')
+        df = conn.execute(circ_query).fetchdf()
+
+        # Filter with accent-insensitive matching
+        filtered = df[
+            df['name'].apply(lambda x: query_normalized in remove_accents(x.lower())) |
+            df['departement'].apply(lambda x: query_normalized in remove_accents(x.lower()))
+        ]
+        results["circonscriptions"] = filtered.head(10).to_dict('records')
 
     # Search communes
     if type in ["all", "commune"]:
+        # For communes, we need a smarter approach due to potentially large dataset
+        # First try exact match on code, then broad name search
         commune_query = f"""
             SELECT DISTINCT
                 codeCommune as code,
                 nomCommune as name,
                 nomDepartement as departement
             FROM contours
-            WHERE LOWER(nomCommune) LIKE '%{query_lower}%'
-               OR codeCommune LIKE '%{query_lower}%'
+            WHERE codeCommune LIKE '%{query_lower}%'
             ORDER BY nomCommune
-            LIMIT 10
+            LIMIT 100
         """
-        results["communes"] = conn.execute(commune_query).fetchdf().to_dict('records')
+        df_code = conn.execute(commune_query).fetchdf()
+
+        # Also get communes with similar names (get first letter match to reduce dataset)
+        first_char = query_normalized[0] if query_normalized else ''
+        commune_name_query = f"""
+            SELECT DISTINCT
+                codeCommune as code,
+                nomCommune as name,
+                nomDepartement as departement
+            FROM contours
+            WHERE LOWER(nomCommune) LIKE '{first_char}%'
+            ORDER BY nomCommune
+            LIMIT 1000
+        """
+        df_name = conn.execute(commune_name_query).fetchdf()
+
+        # Combine and filter with accent-insensitive matching
+        import pandas as pd
+        df = pd.concat([df_code, df_name]).drop_duplicates()
+        filtered = df[
+            df['name'].apply(lambda x: query_normalized in remove_accents(x.lower())) |
+            df['code'].apply(lambda x: query_lower in x.lower())
+        ]
+        results["communes"] = filtered.head(10).to_dict('records')
 
     return results
 

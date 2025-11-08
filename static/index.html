@@ -119,6 +119,72 @@
             padding: 20px;
             color: #7f8c8d;
         }
+
+        .info-section {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 4px solid #3498db;
+        }
+
+        .info-section h2 {
+            color: #2c3e50;
+            font-size: 18px;
+            margin-bottom: 12px;
+        }
+
+        .info-section h3 {
+            color: #34495e;
+            font-size: 15px;
+            margin-top: 16px;
+            margin-bottom: 8px;
+        }
+
+        .info-section p {
+            color: #555;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .info-section a {
+            color: #3498db;
+            text-decoration: none;
+        }
+
+        .info-section a:hover {
+            text-decoration: underline;
+        }
+
+        .warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 12px;
+            border-radius: 4px;
+            margin: 12px 0;
+        }
+
+        .warning strong {
+            color: #856404;
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        .warning p {
+            color: #856404;
+            margin: 0;
+            font-size: 14px;
+        }
+
+        .meta-info {
+            font-size: 13px;
+            color: #7f8c8d;
+            margin-top: 8px;
+        }
+
+        .info-section p {
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -136,12 +202,71 @@
         </div>
 
         <div id="results" class="results"></div>
+
+        <div class="info-section">
+            <h2>À propos des données</h2>
+
+            <p class="meta-info" id="dataInfo">Chargement des informations...</p>
+
+            <p>
+                Ces contours ont été générés à partir du jeu de données
+                <a href="https://www.data.gouv.fr/fr/datasets/bureau-de-vote-et-adresses-de-leurs-electeurs/" target="_blank">
+                    Bureau de vote et adresses de leurs électeurs
+                </a>
+                publié par l'INSEE, issu du REU (Répertoire Electoral Unique).
+            </p>
+
+            <div class="warning">
+                <strong>⚠️ Précautions d'usage</strong>
+                <p>
+                    La génération de ces contours est une approche qui comporte des imprécisions en raison de la nature
+                    même des données (le REU est constitué d'adresses affiliées à un bureau de vote mais n'est pas en
+                    soi une définition de contours géographiques) et de la méthode utilisée. Elle est mise à disposition
+                    pour favoriser la réutilisation des données sources de l'INSEE mais n'a pas vocation à faire autorité.
+                </p>
+            </div>
+
+            <h3>Méthodologie</h3>
+            <p>
+                Les contours sont calculés à partir de la méthode des
+                <strong>Diagrammes de Voronoi</strong> appliqués sur les adresses et calqués sur les contours
+                des communes françaises. Le code source est disponible sur
+                <a href="https://github.com/etalab/contours-bureaux-vote" target="_blank">GitHub</a>.
+            </p>
+
+            <h3>Source</h3>
+            <p>
+                Données provenant de
+                <a href="https://www.data.gouv.fr/fr/datasets/proposition-de-contours-des-bureaux-de-vote/" target="_blank">
+                    data.gouv.fr - Proposition de contours des bureaux de vote
+                </a>
+            </p>
+
+            <h3>Crédits</h3>
+            <p>
+                Site développé par <strong>Clément Mandron</strong>
+            </p>
+        </div>
     </div>
 
     <script>
         const searchInput = document.getElementById('searchInput');
         const resultsDiv = document.getElementById('results');
+        const dataInfoDiv = document.getElementById('dataInfo');
         let debounceTimeout;
+
+        // Load dataset info on page load
+        async function loadDataInfo() {
+            try {
+                const response = await fetch('/api/info');
+                const info = await response.json();
+                dataInfoDiv.innerHTML = `Dernière mise à jour : <strong>${info.last_updated}</strong>`;
+            } catch (error) {
+                dataInfoDiv.innerHTML = '';
+            }
+        }
+
+        loadDataInfo();
 
         searchInput.addEventListener('input', (e) => {
             clearTimeout(debounceTimeout);

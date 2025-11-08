@@ -9,25 +9,42 @@ Interface web pour rechercher et télécharger les contours géographiques des b
 ## ✨ Fonctionnalités
 
 - **Recherche rapide** par département, circonscription ou commune
+- **Recherche insensible aux accents** (ex: "fleville" trouve "Fléville")
 - **Export GeoJSON** pour chaque zone géographique
-- **Données à jour** : mise à jour automatique mensuelle depuis [data.gouv.fr](https://www.data.gouv.fr/fr/datasets/proposition-de-contours-des-bureaux-de-vote/)
-- **Performance optimale** avec DuckDB (faible consommation mémoire)
+- **Performance optimale** avec DuckDB (lecture directe depuis Object Storage)
+- **Données à jour** : 08/11/2025
+
+## 📊 À propos des données
+
+Ces contours ont été générés à partir du jeu de données [Bureau de vote et adresses de leurs électeurs](https://www.data.gouv.fr/fr/datasets/bureau-de-vote-et-adresses-de-leurs-electeurs/) publié par l'INSEE, issu du REU (Répertoire Electoral Unique).
+
+### ⚠️ Précautions d'usage
+
+La génération de ces contours est une approche qui comporte des imprécisions en raison de la nature même des données (le REU est constitué d'adresses affiliées à un bureau de vote mais n'est pas en soi une définition de contours géographiques) et de la méthode utilisée. Elle est mise à disposition pour favoriser la réutilisation des données sources de l'INSEE mais n'a pas vocation à faire autorité.
+
+### 📐 Méthodologie
+
+Les contours sont calculés à partir de la méthode des **Diagrammes de Voronoi** appliqués sur les adresses et calqués sur les contours des communes françaises. Le code source de génération des contours est disponible sur [GitHub](https://github.com/etalab/contours-bureaux-vote).
+
+### 📍 Source
+
+Données provenant de [data.gouv.fr - Proposition de contours des bureaux de vote](https://www.data.gouv.fr/fr/datasets/proposition-de-contours-des-bureaux-de-vote/)
 
 ## 🏗️ Architecture
 
 ```
 FastAPI + DuckDB + Vanilla JS
 - API REST pour recherche et téléchargement
-- DuckDB pour requêtes SQL rapides sur données géographiques
+- DuckDB avec extension httpfs pour lecture directe depuis Scaleway Object Storage
 - Frontend léger sans framework
-- GitHub Actions pour mises à jour automatiques
+- Aucun stockage local requis (données lues à la demande)
 ```
 
 ## 📦 Installation Locale
 
 ```bash
 # Cloner le repo
-git clone https://github.com/votre-username/contours_bdv.git
+git clone https://github.com/clementmandron/contours_bdv.git
 cd contours_bdv
 
 # Créer environnement virtuel
@@ -37,14 +54,11 @@ source venv/bin/activate  # Sur Windows: venv\Scripts\activate
 # Installer dépendances
 pip install -r requirements.txt
 
-# Télécharger les données (optionnel si déjà dans data/)
-python scripts/update_data.py
-
-# Lancer l'API
+# Lancer l'API (les données sont chargées automatiquement depuis Scaleway)
 uvicorn api.main:app --reload
 ```
 
-Ouvrir http://localhost:8000/app dans votre navigateur.
+Ouvrir http://localhost:8000 dans votre navigateur.
 
 ## 🚢 Deployment
 
@@ -59,52 +73,32 @@ Ouvrir http://localhost:8000/app dans votre navigateur.
 
 Aucune variable nécessaire pour le moment.
 
-## 🔄 Mise à jour des données
+## 🔄 Stockage des données
 
-Les données sont hébergées sur **Scaleway Object Storage** (Paris, France).
+Les données sont hébergées sur **Scaleway Object Storage** (Paris, France) et lues directement par DuckDB via l'extension httpfs.
 
-### Manuel - Mettre à jour les données
-
-```bash
-# 1. Télécharger les nouvelles données
-python scripts/update_data.py
-
-# 2. Uploader sur Scaleway
-# Via interface web: https://console.scaleway.com/object-storage/buckets
-# Ou via CLI:
-# s3cmd put data/contours_bureaux_vote.parquet s3://contours-bureaux-vote/
-```
-
-### Configuration Scaleway
-
-Le fichier parquet (317MB) est téléchargé depuis Scaleway au premier démarrage de l'app.
-
-**URL:** `https://contours-bureaux-vote.s3.fr-par.scw.cloud/contours_bureaux_vote.parquet`
+**URL actuelle:** `https://contours-bureaux-vote.s3.fr-par.scw.cloud/20251108_contours_bureaux_vote.parquet`
 
 Pour changer l'URL, modifier `PARQUET_URL` dans `api/main.py`
 
 ## 📚 API Endpoints
 
-- `GET /` - Informations sur l'API
-- `GET /search?q={query}&type={all|departement|circonscription|commune}` - Recherche
+- `GET /` - Interface utilisateur
+- `GET /api` - Informations sur l'API
+- `GET /api/info` - Informations sur le dataset (date MAJ, source, etc.)
+- `GET /search?q={query}&type={all|departement|circonscription|commune}` - Recherche (insensible aux accents)
 - `GET /download/departement/{code}` - Télécharger GeoJSON d'un département
 - `GET /download/circonscription/{name}` - Télécharger GeoJSON d'une circonscription
 - `GET /download/commune/{code}` - Télécharger GeoJSON d'une commune
-- `GET /app` - Interface utilisateur
 
 ## 🛠️ Stack Technique
 
-- **Backend**: FastAPI, DuckDB
+- **Backend**: FastAPI, DuckDB (avec extension httpfs)
 - **Frontend**: HTML/CSS/JS vanilla
 - **Data**: GeoPandas, Parquet
-- **CI/CD**: GitHub Actions
+- **Storage**: Scaleway Object Storage
 - **Hosting**: Railway
 
-## 📊 Source de données
+## 👨‍💻 Auteur
 
-Données officielles de [data.gouv.fr](https://www.data.gouv.fr/fr/datasets/proposition-de-contours-des-bureaux-de-vote/)
-
-
-## 🤝 Contribution
-
-Les contributions sont les bienvenues ! N'hésitez pas à ouvrir une issue ou une pull request.
+Développé par **Clément Mandron**
