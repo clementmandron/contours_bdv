@@ -47,7 +47,7 @@ def df_to_geojson(df):
     return gdf.to_json()
 
 
-@app.get("/")
+@app.get("/api")
 def read_root():
     """API info"""
     return {
@@ -190,10 +190,11 @@ def download_commune(code: str):
     )
 
 
-# Serve static files (frontend)
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-@app.get("/app")
+# Root route - serve the frontend
+@app.get("/")
 def serve_app():
     """Serve the frontend"""
     return FileResponse("static/index.html")
+
+# Serve static files (frontend)
+app.mount("/static", StaticFiles(directory="static"), name="static")
