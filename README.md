@@ -24,7 +24,7 @@ La génération de ces contours est une approche qui comporte des imprécisions 
 
 ### 📐 Méthodologie
 
-Les contours sont calculés à partir de la méthode des **Diagrammes de Voronoi** appliqués sur les adresses et calqués sur les contours des communes françaises. Le code source de génération des contours est disponible sur [GitHub](https://github.com/etalab/contours-bureaux-vote).
+Les contours sont calculés à partir de la méthode des **Diagrammes de Voronoi** appliqués sur les adresses et calqués sur les contours des communes françaises. Le code source de génération des contours est disponible sur [GitHub](https://github.com/datagouv/bureau-vote).
 
 ### 📍 Source
 
