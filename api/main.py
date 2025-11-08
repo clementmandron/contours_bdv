@@ -158,42 +158,32 @@ def search(q: str = "", type: str = "all"):
 
     # Search communes
     if type in ["all", "commune"]:
-        # For communes, we need a smarter approach due to potentially large dataset
-        # First try exact match on code, then broad name search
+        # For communes, get broader initial results then filter in Python
+        # Use first few characters to limit initial dataset
+        first_chars = query_normalized[:2] if len(query_normalized) >= 2 else query_normalized[0] if query_normalized else ''
+
         commune_query = f"""
             SELECT DISTINCT
                 codeCommune as code,
                 nomCommune as name,
                 nomDepartement as departement
             FROM contours
-            WHERE codeCommune LIKE '%{query_lower}%'
+            WHERE LOWER(nomCommune) LIKE '{first_chars}%'
+               OR codeCommune LIKE '%{query_lower}%'
             ORDER BY nomCommune
-            LIMIT 100
+            LIMIT 2000
         """
-        df_code = conn.execute(commune_query).fetchdf()
+        df = conn.execute(commune_query).fetchdf()
 
-        # Also get communes with similar names (get first letter match to reduce dataset)
-        first_char = query_normalized[0] if query_normalized else ''
-        commune_name_query = f"""
-            SELECT DISTINCT
-                codeCommune as code,
-                nomCommune as name,
-                nomDepartement as departement
-            FROM contours
-            WHERE LOWER(nomCommune) LIKE '{first_char}%'
-            ORDER BY nomCommune
-            LIMIT 1000
-        """
-        df_name = conn.execute(commune_name_query).fetchdf()
-
-        # Combine and filter with accent-insensitive matching
-        import pandas as pd
-        df = pd.concat([df_code, df_name]).drop_duplicates()
-        filtered = df[
-            df['name'].apply(lambda x: query_normalized in remove_accents(x.lower())) |
-            df['code'].apply(lambda x: query_lower in x.lower())
-        ]
-        results["communes"] = filtered.head(10).to_dict('records')
+        # Filter with accent-insensitive matching
+        if not df.empty:
+            filtered = df[
+                df['name'].apply(lambda x: query_normalized in remove_accents(x.lower())) |
+                df['code'].apply(lambda x: query_lower in x.lower())
+            ]
+            results["communes"] = filtered.head(10).to_dict('records')
+        else:
+            results["communes"] = []
 
     return results
 
