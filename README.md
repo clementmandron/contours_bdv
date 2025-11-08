@@ -2,10 +2,9 @@
 
 Téléchargez les contours géographiques des bureaux de vote en France au format GeoJSON pour un département, une circonscription ou une commune.
 
-## 🚀 Applications
+## 🚀 Application
 
-- **Nouvelle version (FastAPI + DuckDB)**: [Déployez sur Railway](#deployment)
-- **Version Streamlit (legacy)**: [cliquez ici](https://contoursbdv-3vukdh6np9rqntr94d5yhh.streamlit.app/)
+Interface web pour rechercher et télécharger les contours géographiques des bureaux de vote en France.
 
 ## ✨ Fonctionnalités
 
@@ -105,13 +104,6 @@ Pour changer l'URL, modifier `PARQUET_URL` dans `api/main.py`
 
 Données officielles de [data.gouv.fr](https://www.data.gouv.fr/fr/datasets/proposition-de-contours-des-bureaux-de-vote/)
 
-## 📝 Migration depuis Streamlit
-
-L'ancienne version Streamlit (`app.py`) est conservée pendant la transition. Pour l'utiliser :
-
-```bash
-streamlit run app.py
-```
 
 ## 🤝 Contribution
 
