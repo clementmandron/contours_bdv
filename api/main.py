@@ -22,19 +22,28 @@ PARQUET_URL = "https://contours-bureaux-vote.s3.fr-par.scw.cloud/20251108_contou
 print(f"Initializing DuckDB with remote parquet file from {PARQUET_URL}...")
 conn = duckdb.connect(database=':memory:')
 
-# Install and load httpfs extension for remote file access
-conn.execute("INSTALL httpfs;")
-conn.execute("LOAD httpfs;")
+try:
+    # Install and load httpfs extension for remote file access
+    print("Installing httpfs extension...")
+    conn.execute("INSTALL httpfs;")
+    print("Loading httpfs extension...")
+    conn.execute("LOAD httpfs;")
 
-# Create view that reads directly from remote parquet file
-# Using a view instead of a table to avoid loading all data into memory
-conn.execute(f"""
-    CREATE VIEW contours AS
-    SELECT * FROM read_parquet('{PARQUET_URL}')
-""")
+    # Create view that reads directly from remote parquet file
+    # Using a view instead of a table to avoid loading all data into memory
+    print("Creating view from remote parquet file...")
+    conn.execute(f"""
+        CREATE VIEW contours AS
+        SELECT * FROM read_parquet('{PARQUET_URL}')
+    """)
 
-print(f"✓ DuckDB initialized with remote parquet file")
-print(f"✓ Data will be queried directly from Scaleway Object Storage")
+    print(f"✓ DuckDB initialized with remote parquet file")
+    print(f"✓ Data will be queried directly from Scaleway Object Storage")
+except Exception as e:
+    print(f"ERROR: Failed to initialize DuckDB with remote file: {e}")
+    print("This may be due to httpfs extension installation issues or network problems.")
+    import sys
+    sys.exit(1)
 
 
 def df_to_geojson(df):
