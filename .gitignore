@@ -151,3 +151,18 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# Data files (too large for GitHub - downloaded on deployment)
+data/*.geojson
+data/*.parquet
+data/temp_*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

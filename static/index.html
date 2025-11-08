@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contours Bureaux de Vote</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: #f5f7fa;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #7f8c8d;
+            margin-bottom: 30px;
+        }
+
+        .search-box {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .results {
+            margin-top: 20px;
+        }
+
+        .result-section {
+            margin-bottom: 20px;
+        }
+
+        .result-section h3 {
+            color: #34495e;
+            font-size: 14px;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .result-item {
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+
+        .result-item:hover {
+            background: #e3f2fd;
+            border-color: #3498db;
+        }
+
+        .result-item strong {
+            color: #2c3e50;
+        }
+
+        .result-item small {
+            color: #7f8c8d;
+            display: block;
+            margin-top: 4px;
+        }
+
+        .download-btn {
+            display: inline-block;
+            padding: 8px 16px;
+            background: #3498db;
+            color: white;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 14px;
+            margin-top: 8px;
+            transition: background 0.2s;
+        }
+
+        .download-btn:hover {
+            background: #2980b9;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #95a5a6;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Contours Bureaux de Vote</h1>
+        <p class="subtitle">Recherchez et téléchargez les contours géographiques des bureaux de vote</p>
+
+        <div class="search-box">
+            <input
+                type="text"
+                id="searchInput"
+                placeholder="Rechercher un département, une circonscription ou une commune..."
+                autocomplete="off"
+            >
+        </div>
+
+        <div id="results" class="results"></div>
+    </div>
+
+    <script>
+        const searchInput = document.getElementById('searchInput');
+        const resultsDiv = document.getElementById('results');
+        let debounceTimeout;
+
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(debounceTimeout);
+            const query = e.target.value.trim();
+
+            if (query.length < 2) {
+                resultsDiv.innerHTML = '<div class="empty-state">Tapez au moins 2 caractères pour rechercher</div>';
+                return;
+            }
+
+            resultsDiv.innerHTML = '<div class="loading">Recherche...</div>';
+
+            debounceTimeout = setTimeout(() => search(query), 300);
+        });
+
+        async function search(query) {
+            try {
+                const response = await fetch(`/search?q=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                displayResults(data);
+            } catch (error) {
+                resultsDiv.innerHTML = '<div class="empty-state">Erreur lors de la recherche</div>';
+            }
+        }
+
+        function displayResults(data) {
+            let html = '';
+
+            // Departments
+            if (data.departements && data.departements.length > 0) {
+                html += '<div class="result-section"><h3>Départements</h3>';
+                data.departements.forEach(dept => {
+                    html += `
+                        <div class="result-item">
+                            <strong>${dept.name}</strong> (${dept.code})
+                            <a href="/download/departement/${dept.code}" class="download-btn" download>
+                                Télécharger GeoJSON
+                            </a>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+            }
+
+            // Circonscriptions
+            if (data.circonscriptions && data.circonscriptions.length > 0) {
+                html += '<div class="result-section"><h3>Circonscriptions</h3>';
+                data.circonscriptions.forEach(circ => {
+                    html += `
+                        <div class="result-item">
+                            <strong>${circ.name}</strong>
+                            <small>${circ.departement}</small>
+                            <a href="/download/circonscription/${encodeURIComponent(circ.name)}" class="download-btn" download>
+                                Télécharger GeoJSON
+                            </a>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+            }
+
+            // Communes
+            if (data.communes && data.communes.length > 0) {
+                html += '<div class="result-section"><h3>Communes</h3>';
+                data.communes.forEach(commune => {
+                    html += `
+                        <div class="result-item">
+                            <strong>${commune.name}</strong> (${commune.code})
+                            <small>${commune.departement}</small>
+                            <a href="/download/commune/${commune.code}" class="download-btn" download>
+                                Télécharger GeoJSON
+                            </a>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+            }
+
+            if (!html) {
+                html = '<div class="empty-state">Aucun résultat trouvé</div>';
+            }
+
+            resultsDiv.innerHTML = html;
+        }
+    </script>
+</body>
+</html>
