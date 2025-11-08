@@ -15,40 +15,26 @@ import json
 
 app = FastAPI(title="Contours Bureaux de Vote API")
 
-# Initialize DuckDB connection
-DATA_DIR = Path(__file__).parent.parent / "data"
-DATA_FILE = DATA_DIR / "contours_bureaux_vote.parquet"
-
-# Scaleway Object Storage URL (update this after uploading to Scaleway)
-# Format: https://YOUR-BUCKET-NAME.s3.fr-par.scw.cloud/contours_bureaux_vote.parquet
+# Scaleway Object Storage URL for direct remote reading
 PARQUET_URL = "https://contours-bureaux-vote.s3.fr-par.scw.cloud/20251108_contours_bureaux_vote.parquet"
 
-# Download data if not exists
-if not DATA_FILE.exists():
-    print("Data file not found, downloading from Scaleway Object Storage...")
-    DATA_DIR.mkdir(exist_ok=True)
-
-    import requests
-    print(f"Downloading from {PARQUET_URL}...")
-    response = requests.get(PARQUET_URL, timeout=300, stream=True)
-    response.raise_for_status()
-
-    # Save parquet file
-    with open(DATA_FILE, 'wb') as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            f.write(chunk)
-
-    print(f"✓ Data downloaded and saved to {DATA_FILE}")
-
+# Initialize DuckDB connection
+print(f"Initializing DuckDB with remote parquet file from {PARQUET_URL}...")
 conn = duckdb.connect(database=':memory:')
 
-# Load parquet into DuckDB
+# Install and load httpfs extension for remote file access
+conn.execute("INSTALL httpfs;")
+conn.execute("LOAD httpfs;")
+
+# Create view that reads directly from remote parquet file
+# Using a view instead of a table to avoid loading all data into memory
 conn.execute(f"""
-    CREATE TABLE contours AS
-    SELECT * FROM read_parquet('{DATA_FILE}')
+    CREATE VIEW contours AS
+    SELECT * FROM read_parquet('{PARQUET_URL}')
 """)
 
-print(f"✓ Loaded data into DuckDB")
+print(f"✓ DuckDB initialized with remote parquet file")
+print(f"✓ Data will be queried directly from Scaleway Object Storage")
 
 
 def df_to_geojson(df):
