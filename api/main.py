@@ -192,15 +192,17 @@ def search(q: str = "", type: str = "all"):
 def download_departement(code: str):
     """Download GeoJSON for a specific department"""
 
-    query = f"""
+    print(f"Received department download request for: '{code}'")
+
+    query = """
         SELECT * FROM contours
-        WHERE codeDepartement = '{code}'
+        WHERE codeDepartement = ?
     """
 
-    df = conn.execute(query).fetchdf()
+    df = conn.execute(query, [code]).fetchdf()
 
     if len(df) == 0:
-        raise HTTPException(status_code=404, detail="Department not found")
+        raise HTTPException(status_code=404, detail=f"Department not found: '{code}'")
 
     geojson_str = df_to_geojson(df)
 
@@ -215,15 +217,29 @@ def download_departement(code: str):
 def download_circonscription(name: str):
     """Download GeoJSON for a specific circonscription"""
 
-    query = f"""
+    # Debug logging
+    print(f"Received circonscription download request for: '{name}'")
+
+    # Use parameterized query to avoid SQL injection
+    query = """
         SELECT * FROM contours
-        WHERE nomCirconscription = '{name.replace("'", "''")}'
+        WHERE nomCirconscription = ?
     """
 
-    df = conn.execute(query).fetchdf()
+    df = conn.execute(query, [name]).fetchdf()
+
+    print(f"Query returned {len(df)} results")
 
     if len(df) == 0:
-        raise HTTPException(status_code=404, detail="Circonscription not found")
+        # Check if similar circonscription exists
+        check_query = """
+            SELECT DISTINCT nomCirconscription
+            FROM contours
+            LIMIT 10
+        """
+        available = conn.execute(check_query).fetchdf()
+        print(f"Available circonscriptions (sample): {available['nomCirconscription'].tolist()}")
+        raise HTTPException(status_code=404, detail=f"Circonscription not found: '{name}'")
 
     geojson_str = df_to_geojson(df)
 
@@ -238,15 +254,17 @@ def download_circonscription(name: str):
 def download_commune(code: str):
     """Download GeoJSON for a specific commune"""
 
-    query = f"""
+    print(f"Received commune download request for: '{code}'")
+
+    query = """
         SELECT * FROM contours
-        WHERE codeCommune = '{code}'
+        WHERE codeCommune = ?
     """
 
-    df = conn.execute(query).fetchdf()
+    df = conn.execute(query, [code]).fetchdf()
 
     if len(df) == 0:
-        raise HTTPException(status_code=404, detail="Commune not found")
+        raise HTTPException(status_code=404, detail=f"Commune not found: '{code}'")
 
     geojson_str = df_to_geojson(df)
 
