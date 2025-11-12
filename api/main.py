@@ -216,30 +216,54 @@ def download_departement(code: str):
 @app.get("/download/circonscription/{name}")
 def download_circonscription(name: str):
     """Download GeoJSON for a specific circonscription"""
+    import unicodedata
+
+    # Normalize the input to NFC form
+    name_normalized = unicodedata.normalize('NFC', name)
 
     # Debug logging
     print(f"Received circonscription download request for: '{name}'")
+    print(f"Normalized to: '{name_normalized}'")
+    print(f"Input bytes: {name.encode('utf-8')}")
+    print(f"Normalized bytes: {name_normalized.encode('utf-8')}")
 
-    # Use parameterized query to avoid SQL injection
+    # Try exact match first
     query = """
         SELECT * FROM contours
         WHERE nomCirconscription = ?
     """
 
-    df = conn.execute(query, [name]).fetchdf()
+    df = conn.execute(query, [name_normalized]).fetchdf()
 
     print(f"Query returned {len(df)} results")
 
     if len(df) == 0:
-        # Check if similar circonscription exists
-        check_query = """
+        # If exact match fails, try to find with accent-insensitive search
+        # Get all circonscriptions and match in Python
+        all_circs_query = """
             SELECT DISTINCT nomCirconscription
             FROM contours
-            LIMIT 10
         """
-        available = conn.execute(check_query).fetchdf()
-        print(f"Available circonscriptions (sample): {available['nomCirconscription'].tolist()}")
-        raise HTTPException(status_code=404, detail=f"Circonscription not found: '{name}'")
+        all_circs = conn.execute(all_circs_query).fetchdf()
+
+        # Normalize and compare
+        name_no_accents = remove_accents(name_normalized.lower())
+        matches = []
+        for circ_name in all_circs['nomCirconscription']:
+            circ_normalized = unicodedata.normalize('NFC', circ_name)
+            if remove_accents(circ_normalized.lower()) == name_no_accents:
+                matches.append(circ_normalized)
+
+        if matches:
+            print(f"Found match with accent-insensitive search: {matches[0]}")
+            # Use the matched name for the query
+            df = conn.execute(query, [matches[0]]).fetchdf()
+
+        if len(df) == 0:
+            # Still no match, show available options
+            available = all_circs.head(10)
+            print(f"Available circonscriptions (sample): {available['nomCirconscription'].tolist()}")
+            raise HTTPException(status_code=404, detail=f"Circonscription not found: '{name}'")
 
     geojson_str = df_to_geojson(df)
 
