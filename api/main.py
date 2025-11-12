@@ -70,6 +70,61 @@ def get_db_connection():
     return conn
 
 
+# Cache for search results - loaded once at startup
+SEARCH_CACHE = {
+    "departements": [],
+    "circonscriptions": [],
+    "communes": []
+}
+
+def load_search_cache():
+    """Load all searchable entities into memory cache at startup"""
+    print("Loading search cache...")
+    import time
+    start = time.time()
+
+    with get_db_connection() as conn:
+        # Load departments
+        dept_query = """
+            SELECT DISTINCT
+                codeDepartement as code,
+                nomDepartement as name
+            FROM contours
+            ORDER BY nomDepartement
+        """
+        SEARCH_CACHE["departements"] = conn.execute(dept_query).fetchdf().to_dict('records')
+
+        # Load circonscriptions
+        circ_query = """
+            SELECT DISTINCT
+                nomCirconscription as name,
+                nomDepartement as departement
+            FROM contours
+            ORDER BY nomCirconscription
+        """
+        SEARCH_CACHE["circonscriptions"] = conn.execute(circ_query).fetchdf().to_dict('records')
+
+        # Load communes
+        commune_query = """
+            SELECT DISTINCT
+                codeCommune as code,
+                nomCommune as name,
+                nomDepartement as departement
+            FROM contours
+            ORDER BY nomCommune
+        """
+        SEARCH_CACHE["communes"] = conn.execute(commune_query).fetchdf().to_dict('records')
+
+    elapsed = time.time() - start
+    print(f"✓ Search cache loaded in {elapsed:.2f}s")
+    print(f"  - {len(SEARCH_CACHE['departements'])} departments")
+    print(f"  - {len(SEARCH_CACHE['circonscriptions'])} circonscriptions")
+    print(f"  - {len(SEARCH_CACHE['communes'])} communes")
+
+# Load cache at startup
+load_search_cache()
+
+
 def df_to_geojson_duckdb(conn, query, params, max_features=50000):
     """
     Convert query results to GeoJSON using DuckDB's ST_AsGeoJSON.
@@ -174,12 +229,14 @@ def remove_accents(text: str) -> str:
 def search(q: str = "", type: str = "all"):
     """
     Search for departments, circonscriptions, or communes.
-    Search is accent-insensitive (e.g., 'fleville' will match 'Fléville').
+    Uses in-memory cache for instant results.
 
     Args:
         q: Search query
         type: Filter by type (departement, circonscription, commune, all)
     """
+    import time
+    start = time.time()
 
     results = {"departements": [], "circonscriptions": [], "communes": []}
 
@@ -189,75 +246,44 @@ def search(q: str = "", type: str = "all"):
     query_lower = q.lower()
     query_normalized = remove_accents(query_lower)
 
-    # Search departments
+    # Search departments from cache
     if type in ["all", "departement"]:
-        # Get all departments and filter in Python for accent-insensitive search
-        dept_query = """
-            SELECT DISTINCT
-                codeDepartement as code,
-                nomDepartement as name
-            FROM contours
-            ORDER BY nomDepartement
-        """
-        with get_db_connection() as conn:
-            df = conn.execute(dept_query).fetchdf()
+        matches = []
+        for dept in SEARCH_CACHE["departements"]:
+            name_normalized = remove_accents(dept['name'].lower())
+            code_lower = dept['code'].lower()
+            if query_normalized in name_normalized or query_lower in code_lower:
+                matches.append(dept)
+                if len(matches) >= 10:
+                    break
+        results["departements"] = matches
 
-        # Filter with accent-insensitive matching
-        filtered = df[
-            df['name'].apply(lambda x: query_normalized in remove_accents(x.lower())) |
-            df['code'].apply(lambda x: query_lower in x.lower())
-        ]
-        results["departements"] = filtered.head(10).to_dict('records')
-
-    # Search circonscriptions
+    # Search circonscriptions from cache
     if type in ["all", "circonscription"]:
-        # Get all circonscriptions and filter in Python for accent-insensitive search
-        circ_query = """
-            SELECT DISTINCT
-                nomCirconscription as name,
-                nomDepartement as departement
-            FROM contours
-            ORDER BY nomCirconscription
-        """
-        with get_db_connection() as conn:
-            df = conn.execute(circ_query).fetchdf()
+        matches = []
+        for circ in SEARCH_CACHE["circonscriptions"]:
+            name_normalized = remove_accents(circ['name'].lower())
+            dept_normalized = remove_accents(circ['departement'].lower())
+            if query_normalized in name_normalized or query_normalized in dept_normalized:
+                matches.append(circ)
+                if len(matches) >= 10:
+                    break
+        results["circonscriptions"] = matches
 
-        # Filter with accent-insensitive matching
-        filtered = df[
-            df['name'].apply(lambda x: query_normalized in remove_accents(x.lower())) |
-            df['departement'].apply(lambda x: query_normalized in remove_accents(x.lower()))
-        ]
-        results["circonscriptions"] = filtered.head(10).to_dict('records')
-
-    # Search communes
+    # Search communes from cache
     if type in ["all", "commune"]:
-        # For communes, get broader initial results then filter in Python
-        # Use first few characters to limit initial dataset
-        first_chars = query_normalized[:2] if len(query_normalized) >= 2 else query_normalized[0] if query_normalized else ''
+        matches = []
+        for commune in SEARCH_CACHE["communes"]:
+            name_normalized = remove_accents(commune['name'].lower())
+            code_lower = commune['code'].lower()
+            if query_normalized in name_normalized or query_lower in code_lower:
+                matches.append(commune)
+                if len(matches) >= 10:
+                    break
+        results["communes"] = matches
 
-        commune_query = f"""
-            SELECT DISTINCT
-                codeCommune as code,
-                nomCommune as name,
-                nomDepartement as departement
-            FROM contours
-            WHERE LOWER(nomCommune) LIKE '{first_chars}%'
-               OR codeCommune LIKE '%{query_lower}%'
-            ORDER BY nomCommune
-            LIMIT 2000
-        """
-        with get_db_connection() as conn:
-            df = conn.execute(commune_query).fetchdf()
-
-        # Filter with accent-insensitive matching
-        if not df.empty:
-            filtered = df[
-                df['name'].apply(lambda x: query_normalized in remove_accents(x.lower())) |
-                df['code'].apply(lambda x: query_lower in x.lower())
-            ]
-            results["communes"] = filtered.head(10).to_dict('records')
-        else:
-            results["communes"] = []
+    elapsed = time.time() - start
+    print(f"Search for '{q}' completed in {elapsed:.3f}s ({len(results['departements'])} depts, {len(results['circonscriptions'])} circs, {len(results['communes'])} communes)")
 
     return results
 
