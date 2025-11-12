@@ -102,10 +102,42 @@
             font-size: 14px;
             margin-top: 8px;
             transition: background 0.2s;
+            border: none;
+            cursor: pointer;
+            font-family: inherit;
+            position: relative;
         }
 
-        .download-btn:hover {
+        .download-btn:hover:not(:disabled) {
             background: #2980b9;
+        }
+
+        .download-btn:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        .download-btn.loading {
+            padding-right: 40px;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            margin-top: -7px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
 
         .empty-state {
@@ -304,9 +336,9 @@
                     html += `
                         <div class="result-item">
                             <strong>${dept.name}</strong> (${dept.code})
-                            <a href="/download/departement/${dept.code}" class="download-btn" download>
+                            <button class="download-btn" onclick="downloadFile('/download/departement/${dept.code}', 'departement_${dept.code}.geojson', this)">
                                 Télécharger GeoJSON
-                            </a>
+                            </button>
                         </div>
                     `;
                 });
@@ -317,13 +349,15 @@
             if (data.circonscriptions && data.circonscriptions.length > 0) {
                 html += '<div class="result-section"><h3>Circonscriptions</h3>';
                 data.circonscriptions.forEach(circ => {
+                    const circUrl = `/download/circonscription/${encodeURIComponent(circ.departement)}/${encodeURIComponent(circ.name)}`;
+                    const circFilename = `circonscription_${circ.departement}_${circ.name}.geojson`.replace(/ /g, '_');
                     html += `
                         <div class="result-item">
                             <strong>${circ.name}</strong>
                             <small>${circ.departement}</small>
-                            <a href="/download/circonscription/${encodeURIComponent(circ.name)}" class="download-btn" download>
+                            <button class="download-btn" onclick="downloadFile('${circUrl}', '${circFilename}', this)">
                                 Télécharger GeoJSON
-                            </a>
+                            </button>
                         </div>
                     `;
                 });
@@ -338,9 +372,9 @@
                         <div class="result-item">
                             <strong>${commune.name}</strong> (${commune.code})
                             <small>${commune.departement}</small>
-                            <a href="/download/commune/${commune.code}" class="download-btn" download>
+                            <button class="download-btn" onclick="downloadFile('/download/commune/${commune.code}', 'commune_${commune.code}.geojson', this)">
                                 Télécharger GeoJSON
-                            </a>
+                            </button>
                         </div>
                     `;
                 });
@@ -352,6 +386,48 @@
             }
 
             resultsDiv.innerHTML = html;
+        }
+
+        // Function to download file with loading indicator
+        async function downloadFile(url, filename, button) {
+            // Disable button and show loading
+            button.disabled = true;
+            button.classList.add('loading');
+            const originalText = button.textContent;
+            button.innerHTML = originalText + '<span class="spinner"></span>';
+
+            try {
+                // Fetch the file
+                const response = await fetch(url);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                // Get the blob
+                const blob = await response.blob();
+
+                // Create download link
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+
+                // Cleanup
+                window.URL.revokeObjectURL(downloadUrl);
+                document.body.removeChild(a);
+
+            } catch (error) {
+                console.error('Download error:', error);
+                alert('Erreur lors du téléchargement. Veuillez réessayer.');
+            } finally {
+                // Re-enable button
+                button.disabled = false;
+                button.classList.remove('loading');
+                button.textContent = originalText;
+            }
         }
     </script>
 </body>

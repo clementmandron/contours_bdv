@@ -12,26 +12,37 @@ from typing import List, Dict
 import geopandas as gpd
 from shapely import wkb
 import json
+import threading
 
 app = FastAPI(title="Contours Bureaux de Vote API")
 
 # Scaleway Object Storage URL for direct remote reading
 PARQUET_URL = "https://contours-bureaux-vote.s3.fr-par.scw.cloud/20251108_contours_bureaux_vote.parquet"
 
-# Initialize DuckDB connection
+# Initialize DuckDB connection - use read_only and shared connection
 print(f"Initializing DuckDB with remote parquet file from {PARQUET_URL}...")
-conn = duckdb.connect(database=':memory:')
+
+# Use a persistent database file to allow concurrent reads
+# This is safer than :memory: for concurrent access
+import tempfile
+import os
+db_path = os.path.join(tempfile.gettempdir(), 'contours_bdv.duckdb')
+
+# Create the database with the view
+conn = duckdb.connect(database=db_path)
 
 try:
-    # Install and load httpfs extension for remote file access
-    print("Installing httpfs extension...")
+    # Install and load extensions for remote file access and spatial operations
+    print("Installing extensions...")
     conn.execute("INSTALL httpfs;")
-    print("Loading httpfs extension...")
+    conn.execute("INSTALL spatial;")
+    print("Loading extensions...")
     conn.execute("LOAD httpfs;")
+    conn.execute("LOAD spatial;")
 
-    # Create view that reads directly from remote parquet file
-    # Using a view instead of a table to avoid loading all data into memory
+    # Drop view if exists and recreate
     print("Creating view from remote parquet file...")
+    conn.execute("DROP VIEW IF EXISTS contours;")
     conn.execute(f"""
         CREATE VIEW contours AS
         SELECT * FROM read_parquet('{PARQUET_URL}')
@@ -39,21 +50,79 @@ try:
 
     print(f"✓ DuckDB initialized with remote parquet file")
     print(f"✓ Data will be queried directly from Scaleway Object Storage")
+    print(f"✓ Spatial extension loaded for fast GeoJSON conversion")
+    print(f"✓ Database file: {db_path}")
 except Exception as e:
     print(f"ERROR: Failed to initialize DuckDB with remote file: {e}")
     print("This may be due to httpfs extension installation issues or network problems.")
     import sys
     sys.exit(1)
+finally:
+    # Close the initialization connection
+    conn.close()
+
+# Function to get a connection (each request will get its own)
+def get_db_connection():
+    """Get a read-only connection to the database"""
+    conn = duckdb.connect(database=db_path, read_only=True)
+    conn.execute("LOAD httpfs;")
+    conn.execute("LOAD spatial;")
+    return conn
 
 
-def df_to_geojson(df):
-    """Convert DuckDB dataframe to GeoJSON string"""
-    # Convert WKB geometry column to shapely geometries
-    df['geometry'] = df['geometry'].apply(lambda x: wkb.loads(bytes(x)))
-    # Create GeoDataFrame
-    gdf = gpd.GeoDataFrame(df, geometry='geometry')
-    # Convert to GeoJSON
-    return gdf.to_json()
+def df_to_geojson_duckdb(conn, query, params, max_features=50000):
+    """
+    Convert query results to GeoJSON using DuckDB's ST_AsGeoJSON.
+    Much faster than GeoPandas conversion.
+
+    Args:
+        conn: DuckDB connection
+        query: SQL query that returns geometry column
+        params: Query parameters
+        max_features: Maximum number of features to prevent memory issues
+    """
+    import time
+    start = time.time()
+
+    # First check count
+    count_query = f"SELECT COUNT(*) FROM ({query})"
+    count = conn.execute(count_query, params).fetchone()[0]
+
+    if count > max_features:
+        raise ValueError(f"Too many features ({count}). Maximum allowed: {max_features}")
+
+    print(f"Building GeoJSON for {count} features using DuckDB...")
+
+    # Build GeoJSON directly in DuckDB using ST_AsGeoJSON
+    # This creates a proper FeatureCollection
+    geojson_query = f"""
+    SELECT json_object(
+        'type', 'FeatureCollection',
+        'features', json_group_array(
+            json_object(
+                'type', 'Feature',
+                'properties', json_object(
+                    'codeBureauVote', codeBureauVote,
+                    'numeroBureauVote', numeroBureauVote,
+                    'codeCommune', codeCommune,
+                    'nomCommune', nomCommune,
+                    'codeDepartement', codeDepartement,
+                    'nomDepartement', nomDepartement,
+                    'nomCirconscription', nomCirconscription
+                ),
+                'geometry', json(ST_AsGeoJSON(geometry))
+            )
+        )
+    ) as geojson
+    FROM ({query})
+    """
+
+    result = conn.execute(geojson_query, params).fetchone()[0]
+
+    elapsed = time.time() - start
+    print(f"✓ GeoJSON built in {elapsed:.2f}s")
+
+    return result
 
 
 @app.get("/api")
@@ -63,7 +132,9 @@ def read_root():
         "name": "Contours Bureaux de Vote API",
         "endpoints": {
             "/search": "Search departments, circonscriptions, or communes",
-            "/download/{type}/{name}": "Download GeoJSON for a specific area",
+            "/download/departement/{code}": "Download GeoJSON for a department",
+            "/download/circonscription/{department}/{name}": "Download GeoJSON for a circonscription",
+            "/download/commune/{code}": "Download GeoJSON for a commune",
             "/api/info": "Get dataset information"
         }
     }
@@ -128,7 +199,8 @@ def search(q: str = "", type: str = "all"):
             FROM contours
             ORDER BY nomDepartement
         """
-        df = conn.execute(dept_query).fetchdf()
+        with get_db_connection() as conn:
+            df = conn.execute(dept_query).fetchdf()
 
         # Filter with accent-insensitive matching
         filtered = df[
@@ -147,7 +219,8 @@ def search(q: str = "", type: str = "all"):
             FROM contours
             ORDER BY nomCirconscription
         """
-        df = conn.execute(circ_query).fetchdf()
+        with get_db_connection() as conn:
+            df = conn.execute(circ_query).fetchdf()
 
         # Filter with accent-insensitive matching
         filtered = df[
@@ -173,7 +246,8 @@ def search(q: str = "", type: str = "all"):
             ORDER BY nomCommune
             LIMIT 2000
         """
-        df = conn.execute(commune_query).fetchdf()
+        with get_db_connection() as conn:
+            df = conn.execute(commune_query).fetchdf()
 
         # Filter with accent-insensitive matching
         if not df.empty:
@@ -199,12 +273,14 @@ def download_departement(code: str):
         WHERE codeDepartement = ?
     """
 
-    df = conn.execute(query, [code]).fetchdf()
-
-    if len(df) == 0:
-        raise HTTPException(status_code=404, detail=f"Department not found: '{code}'")
-
-    geojson_str = df_to_geojson(df)
+    try:
+        with get_db_connection() as conn:
+            geojson_str = df_to_geojson_duckdb(conn, query, [code])
+    except ValueError as e:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Dataset too large to download. Please contact support for bulk data access."
+        )
 
     return Response(
         content=geojson_str,
@@ -213,8 +289,8 @@ def download_departement(code: str):
     )
 
 
-@app.get("/download/circonscription/{name}")
-def download_circonscription(name: str):
+@app.get("/download/circonscription/{department}/{name}")
+def download_circonscription(department: str, name: str):
     """Download GeoJSON for a specific circonscription"""
     import unicodedata
 
@@ -227,50 +303,45 @@ def download_circonscription(name: str):
     print(f"Input bytes: {name.encode('utf-8')}")
     print(f"Normalized bytes: {name_normalized.encode('utf-8')}")
 
-    # Try exact match first
+    # Try exact match first with department filter
     query = """
         SELECT * FROM contours
-        WHERE nomCirconscription = ?
+        WHERE nomCirconscription = ? AND nomDepartement = ?
     """
 
-    df = conn.execute(query, [name_normalized]).fetchdf()
-
-    print(f"Query returned {len(df)} results")
-
-    if len(df) == 0:
-        # If exact match fails, try to find with accent-insensitive search
-        # Get all circonscriptions and match in Python
-        all_circs_query = """
-            SELECT DISTINCT nomCirconscription
-            FROM contours
+    try:
+        with get_db_connection() as conn:
+            geojson_str = df_to_geojson_duckdb(conn, query, [name_normalized, department])
+    except ValueError as e:
+        # Check if it's a "too many features" error or "no results" error
+        if "Too many features" in str(e):
+            raise HTTPException(
+                status_code=413,
+                detail=str(e) + " Please contact support for bulk data access."
+            )
+        # Try case-insensitive match
+        case_insensitive_query = """
+            SELECT * FROM contours
+            WHERE LOWER(nomCirconscription) = LOWER(?) AND LOWER(nomDepartement) = LOWER(?)
         """
-        all_circs = conn.execute(all_circs_query).fetchdf()
+        try:
+            with get_db_connection() as conn:
+                geojson_str = df_to_geojson_duckdb(conn, case_insensitive_query, [name_normalized, department])
+            print(f"Found match with case-insensitive search")
+        except:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Circonscription '{name}' not found in department '{department}'"
+            )
 
-        # Normalize and compare
-        name_no_accents = remove_accents(name_normalized.lower())
-        matches = []
-        for circ_name in all_circs['nomCirconscription']:
-            circ_normalized = unicodedata.normalize('NFC', circ_name)
-            if remove_accents(circ_normalized.lower()) == name_no_accents:
-                matches.append(circ_normalized)
-
-        if matches:
-            print(f"Found match with accent-insensitive search: {matches[0]}")
-            # Use the matched name for the query
-            df = conn.execute(query, [matches[0]]).fetchdf()
-
-        if len(df) == 0:
-            # Still no match, show available options
-            available = all_circs.head(10)
-            print(f"Available circonscriptions (sample): {available['nomCirconscription'].tolist()}")
-            raise HTTPException(status_code=404, detail=f"Circonscription not found: '{name}'")
-
-    geojson_str = df_to_geojson(df)
+    # Create safe filename
+    safe_dept = department.replace(" ", "_").replace("/", "-")
+    safe_name = name.replace(" ", "_").replace("/", "-")
 
     return Response(
         content=geojson_str,
         media_type="application/geo+json",
-        headers={"Content-Disposition": f"attachment; filename=circonscription_{name}.geojson"}
+        headers={"Content-Disposition": f"attachment; filename=circonscription_{safe_dept}_{safe_name}.geojson"}
     )
 
 
@@ -285,12 +356,14 @@ def download_commune(code: str):
         WHERE codeCommune = ?
     """
 
-    df = conn.execute(query, [code]).fetchdf()
-
-    if len(df) == 0:
-        raise HTTPException(status_code=404, detail=f"Commune not found: '{code}'")
-
-    geojson_str = df_to_geojson(df)
+    try:
+        with get_db_connection() as conn:
+            geojson_str = df_to_geojson_duckdb(conn, query, [code])
+    except ValueError as e:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Dataset too large to download. Please contact support for bulk data access."
+        )
 
     return Response(
         content=geojson_str,
