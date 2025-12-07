@@ -2,9 +2,7 @@
 
 Téléchargez les contours géographiques des bureaux de vote en France au format GeoJSON pour un département, une circonscription ou une commune.
 
-## 🚀 Application
-
-Interface web pour rechercher et télécharger les contours géographiques des bureaux de vote en France.
+**Application en ligne** : https://contoursbdvprod69q919vs-contours-bdv-prod.functions.fnc.fr-par.scw.cloud
 
 ## ✨ Fonctionnalités
 
@@ -34,11 +32,15 @@ Données provenant de [data.gouv.fr - Proposition de contours des bureaux de vot
 
 ```
 FastAPI + DuckDB + Vanilla JS
-- API REST pour recherche et téléchargement
-- DuckDB avec extension httpfs pour lecture directe depuis Scaleway Object Storage
-- Frontend léger sans framework
-- Aucun stockage local requis (données lues à la demande)
+├── api/main.py      # API REST (recherche, téléchargement GeoJSON)
+├── static/          # Frontend HTML/CSS/JS
+├── Dockerfile       # Image Docker optimisée pour serverless
+└── .env.example     # Template de configuration
 ```
+
+- **DuckDB** avec extension `httpfs` pour lecture directe depuis Scaleway Object Storage
+- **Aucun stockage local requis** : données lues à la demande via HTTP
+- **Serverless-ready** : cold start ~3-5s, scale to zero
 
 ## 📦 Installation Locale
 
@@ -54,50 +56,83 @@ source venv/bin/activate  # Sur Windows: venv\Scripts\activate
 # Installer dépendances
 pip install -r requirements.txt
 
-# Lancer l'API (les données sont chargées automatiquement depuis Scaleway)
+# Configurer les variables d'environnement
+cp .env.example .env
+# Éditer .env avec l'URL du fichier parquet
+
+# Lancer l'API
 uvicorn api.main:app --reload
 ```
 
 Ouvrir http://localhost:8000 dans votre navigateur.
 
-## 🚢 Deployment
-
-### Railway (Recommandé)
-
-1. Créer un compte sur [Railway](https://railway.app)
-2. Connecter votre repo GitHub
-3. Railway détectera automatiquement la configuration
-4. Déployer !
+## 🚢 Déploiement
 
 ### Variables d'environnement
 
-Aucune variable nécessaire pour le moment.
+| Variable | Description | Requis |
+|----------|-------------|--------|
+| `PARQUET_URL` | URL du fichier parquet des contours de bureaux de vote | Oui |
+
+### Docker
+
+```bash
+# Build l'image
+docker build -t contours-bdv .
+
+# Option 1 : Run avec --env-file (recommandé)
+docker run -p 8000:8000 --env-file .env contours-bdv
+
+# Option 2 : Run avec variable explicite
+docker run -p 8000:8000 \
+  -e PARQUET_URL="https://mon-bucket.s3.fr-par.scw.cloud/contours.parquet" \
+  contours-bdv
+```
+
+### Scaleway Serverless Containers
+
+```bash
+# 1. Se connecter au registry Scaleway
+docker login rg.fr-par.scw.cloud/<namespace> -u nologin --password-stdin <<< "$SCW_SECRET_KEY"
+
+# 2. Build l'image
+docker build -t rg.fr-par.scw.cloud/<namespace>/app:latest .
+
+# 3. Push vers le registry
+docker push rg.fr-par.scw.cloud/<namespace>/app:latest
+
+# 4. Créer le container serverless via l'interface web Scaleway :
+#    - Image: rg.fr-par.scw.cloud/<namespace>/app:latest
+#    - Port: 8000
+#    - Memory: 1024 MB
+#    - vCPU: 1000 mVCPU
+#    - Min scale: 0 (scale to zero)
+#    - Privacy: Public
+#    - Variables d'environnement: PARQUET_URL
+```
 
 ## 🔄 Stockage des données
 
-Les données sont hébergées sur **Scaleway Object Storage** (Paris, France) et lues directement par DuckDB via l'extension httpfs.
-
-**URL actuelle:** `https://contours-bureaux-vote.s3.fr-par.scw.cloud/20251108_contours_bureaux_vote.parquet`
-
-Pour changer l'URL, modifier `PARQUET_URL` dans `api/main.py`
+Les données sont hébergées sur **Scaleway Object Storage** (Paris, France) et lues directement par DuckDB via l'extension httpfs. L'URL est configurée via la variable d'environnement `PARQUET_URL` (voir `.env.example`).
 
 ## 📚 API Endpoints
 
-- `GET /` - Interface utilisateur
-- `GET /api` - Informations sur l'API
-- `GET /api/info` - Informations sur le dataset (date MAJ, source, etc.)
-- `GET /search?q={query}&type={all|departement|circonscription|commune}` - Recherche (insensible aux accents)
-- `GET /download/departement/{code}` - Télécharger GeoJSON d'un département
-- `GET /download/circonscription/{name}` - Télécharger GeoJSON d'une circonscription
-- `GET /download/commune/{code}` - Télécharger GeoJSON d'une commune
+| Endpoint | Description |
+|----------|-------------|
+| `GET /` | Interface utilisateur |
+| `GET /api` | Informations sur l'API |
+| `GET /api/info` | Informations sur le dataset (date MAJ, source) |
+| `GET /search?q={query}&type={type}` | Recherche (type: all, departement, circonscription, commune) |
+| `GET /download/departement/{code}` | Télécharger GeoJSON d'un département |
+| `GET /download/circonscription/{dept}/{name}` | Télécharger GeoJSON d'une circonscription |
+| `GET /download/commune/{code}` | Télécharger GeoJSON d'une commune |
 
 ## 🛠️ Stack Technique
 
-- **Backend**: FastAPI, DuckDB (avec extension httpfs)
-- **Frontend**: HTML/CSS/JS vanilla
-- **Data**: GeoPandas, Parquet
-- **Storage**: Scaleway Object Storage
-- **Hosting**: Railway
+- **Backend** : FastAPI, DuckDB (avec extensions httpfs et spatial)
+- **Frontend** : HTML/CSS/JS vanilla
+- **Storage** : Scaleway Object Storage (Parquet)
+- **Hosting** : Scaleway Serverless Containers
 
 ## 👨‍💻 Auteur
 

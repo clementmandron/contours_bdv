@@ -2,6 +2,7 @@
 fastapi>=0.104.0
 uvicorn>=0.24.0
 duckdb>=0.9.0
+python-dotenv>=1.0.0
 
 # Data processing
 geopandas>=0.14.0

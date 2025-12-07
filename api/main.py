@@ -13,11 +13,16 @@ import geopandas as gpd
 from shapely import wkb
 import json
 import threading
+import os
+
+# Load .env file in development (ignored if not present)
+from dotenv import load_dotenv
+load_dotenv()
 
 app = FastAPI(title="Contours Bureaux de Vote API")
 
-# Scaleway Object Storage URL for direct remote reading
-PARQUET_URL = "https://contours-bureaux-vote.s3.fr-par.scw.cloud/20251108_contours_bureaux_vote.parquet"
+# Scaleway Object Storage URL (configured via environment variable or .env file)
+PARQUET_URL = os.environ["PARQUET_URL"]
 
 # Initialize DuckDB connection - use read_only and shared connection
 print(f"Initializing DuckDB with remote parquet file from {PARQUET_URL}...")

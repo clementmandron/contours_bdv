@@ -1,0 +1,50 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Git
+.git/
+.gitignore
+
+# Data files (read from remote storage)
+data/
+*.parquet
+*.geojson
+*.csv
+*.duckdb
+
+# Development
+*.md
+README*
+.env
+.env.*
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Debug/test files
+debug_*.py
+test_*.py
+inspect_*.py
+*_test.py
+
+# Docker (don't include in context)
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# OS
+.DS_Store
+Thumbs.db
